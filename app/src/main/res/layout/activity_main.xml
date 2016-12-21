@@ -10,37 +10,15 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context="com.example.doni.pos.MainActivity">
 
-    <EditText
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:inputType="numberDecimal"
-        android:ems="10"
-        android:id="@+id/input_ammount"
-        android:text="1000"
-        android:layout_alignBaseline="@+id/checkout_button"
-        android:layout_alignBottom="@+id/checkout_button"
-        android:layout_alignParentStart="true"
-        android:layout_marginStart="11dp" />
-
-    <TextView
-        android:text="Connected Device:"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:id="@+id/connected_device"
-        android:layout_below="@+id/checkout_button"
-        android:layout_alignStart="@+id/input_ammount" />
-
     <TextView
         android:text="Logs:"
         android:layout_width="match_parent"
         android:maxLines = "2000"
         android:scrollbars = "vertical"
         android:layout_height="match_parent"
-        android:layout_marginTop="22dp"
         android:id="@+id/log_view"
-        android:layout_below="@+id/connected_device"
-        android:layout_alignStart="@+id/connected_device" />
+        android:layout_alignParentStart="true"
+        android:layout_below="@+id/connected_device" />
 
     <Button
         android:text="Start POS"
@@ -51,19 +29,32 @@
         android:layout_alignParentEnd="true" />
 
     <Button
-        android:text="Stop POS"
+        android:text="Reset POS"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:id="@+id/stop_pos"
         android:layout_below="@+id/start_pos"
-        android:layout_alignStart="@+id/input_ammount"
-        android:layout_alignParentEnd="true" />
+        android:layout_alignParentEnd="true"
+        android:layout_alignParentStart="true" />
 
-    <Button
-        android:text="Checkout!"
+    <TextView
+        android:text="Ammount : 1000$"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:id="@+id/checkout_button"
+        android:layout_marginTop="12dp"
+        android:id="@+id/textView"
         android:layout_below="@+id/stop_pos"
-        android:layout_alignParentEnd="true" />
+        android:layout_alignStart="@+id/log_view" />
+
+    <TextView
+        android:text="Connected Device:"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/connected_device"
+        android:layout_marginStart="16dp"
+        android:layout_alignBaseline="@+id/textView"
+        android:layout_alignBottom="@+id/textView"
+        android:layout_toEndOf="@+id/textView" />
+
+
 </RelativeLayout>

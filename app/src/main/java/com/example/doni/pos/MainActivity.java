@@ -36,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int ENABLE_BLUETOOTH_REQUEST = 17;
     private SharedPreferences preferences;
     private SharedPreferences.Editor editPref;
+    private boolean finalKey = false;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -58,19 +59,34 @@ public class MainActivity extends AppCompatActivity {
             public void onReceive(Context context, Intent intent) {
                 String s = intent.getStringExtra(GattService.DEVICE_NAME);
                 String log = intent.getStringExtra(GattService.LOGS_PROTOCOL);
+                String close = intent.getStringExtra(GattService.CLOSE);
 
+                final String other_log = intent.getStringExtra(GattService.OTHER_LOGS);
+                if(close!=null){
+                    stopService(new Intent(MainActivity.this, GattService.class));
+                    updateUi();
+                    Intent intents = getIntent();
+                    finish();
+                    startActivity(intents);
+                }
                // Log.d("valS" , s);
                 if(s!=null){
                 connectedDevice.setText("Customer Name/ID:"+ s);
                 }
-                if(log!=null){
-                    try {
-                        byte[] data = Base64.decode(log, Base64.DEFAULT);
-                        byte[] decomp = compress.decompress(data);
-                        System.out.println(data.length);
+                if(other_log!=null && !finalKey){
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            tampLogs+=other_log;
+                            Logs.setText(tampLogs);
+                            finalKey=true;
+                        }
+                    });
+                }
 
-                        System.out.println(decomp.length);
-                        ByteArrayInputStream bais = new ByteArrayInputStream(decomp);
+                if(log!=null){
+                        byte[] data = Base64.decode(log, Base64.DEFAULT);
+                        ByteArrayInputStream bais = new ByteArrayInputStream(data);
                         DataInputStream in = new DataInputStream(bais);
                         try {
                             while (in.available() > 0) {
@@ -85,7 +101,6 @@ public class MainActivity extends AppCompatActivity {
                                     element = "("+element.length()+")"+element.substring(0,20)+"...";
                                 }
                                 tampLogs+="\n"+element;
-
                             }
                         } catch (IOException e) {
                             e.printStackTrace();
@@ -93,16 +108,12 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
+
                                 Logs.setText(tampLogs);
                             }
+
+
                         });
-
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    } catch (DataFormatException e) {
-                        e.printStackTrace();
-                    }
-
                 }       // do something here.
             }
         };
@@ -113,6 +124,9 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View v) {
                 stopService(new Intent(MainActivity.this, GattService.class));
                 updateUi();
+                Intent intent = getIntent();
+                finish();
+                startActivity(intent);
             }
         });
         start.setOnClickListener(new View.OnClickListener() {

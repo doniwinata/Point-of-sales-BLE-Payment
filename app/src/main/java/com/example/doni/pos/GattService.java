@@ -28,13 +28,16 @@ import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.SynchronousQueue;
 import java.util.zip.DataFormatException;
 
 import static android.R.id.list;
@@ -46,7 +49,9 @@ public class GattService extends Service {
 
     ///////atribute for japke/////
     public byte[] round1;
-
+    public byte[] round2;
+    public byte[] round3;
+    public byte[] round4;
 
     private static int NOTIFICATION_ID = 0;
     public static final ParcelUuid UUID = ParcelUuid.fromString("0000FED8-0000-1000-8000-00805F9B34FB");
@@ -62,10 +67,16 @@ public class GattService extends Service {
 
     static final public String DEVICE_NAME = "com.example.doni.pos.GattService.DEVICE_NAME";
     static final public String LOGS_PROTOCOL = "com.example.doni.pos.GattService.LOGS_PROTOCOL";
+    static final public String OTHER_LOGS = "com.example.doni.pos.GattService.OTHER_LOGS";
+    static final public String CLOSE = "com.example.doni.pos.GattService.CLOSE";
 
     //init protocol for jpake
-    private final jPake jpake = new jPake(2);
+    private final jPake jpake = new jPake(1);
     private Integer protocolCounter = 0;
+
+    public Integer numPackets = 0;
+    public byte[] packetData;
+    public boolean packetFinish = false;
     @Override
     public void onCreate() {
         super.onCreate();
@@ -92,13 +103,38 @@ public class GattService extends Service {
             intent.putExtra(DEVICE_NAME, message);
         broadcaster.sendBroadcast(intent);
     }
+    public void sendOtherLogs(String message){
+        Intent intent = new Intent(COPA_RESULT);
+        if(message != null)
+            intent.putExtra(OTHER_LOGS, message);
+        broadcaster.sendBroadcast(intent);
+    }
     public void sendLogs(byte[] message) throws IOException, DataFormatException {
+        protocolCounter++;
+        System.out.println("masuk sendlogs");
+        byte[] decomp = compress.decompress(message);
+        ByteArrayInputStream bais = new ByteArrayInputStream(decomp);
+        DataInputStream in = new DataInputStream(bais);
+        List<String> result = new ArrayList<>();
+        try {
+            while (in.available() > 0) {
+                String element = in.readUTF();
+                result.add(element);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        jpake.updateValue(result);
+
         // Sending side
-        String base64 = Base64.encodeToString(message, Base64.DEFAULT);
+        String base64 = Base64.encodeToString(decomp, Base64.DEFAULT);
         Intent intent = new Intent(COPA_RESULT);
         if(message != null)
             intent.putExtra(LOGS_PROTOCOL, base64);
         broadcaster.sendBroadcast(intent);
+        if(jpake.finalSKey!=""){
+            sendOtherLogs("\n----------------\n Final Key: "+jpake.getfinalSKey()+"\n Final Nonce: "+jpake.getFinalNonce()+"\n");
+        }
     }
     private void initServer() {
         BluetoothGattService service = new BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
@@ -164,18 +200,27 @@ public class GattService extends Service {
                 if(device.getName() != null){
                     setDeviceName(device.getAddress());
                 }else { setDeviceName(device.getAddress());}
-                try {
-                    round1 = jpake.jpakeRound1();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                if(!jpake.round1) {
+                    try {
+                        round1 = jpake.jpakeRound1();
+                        jpake.round1 = true;
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    try {
+                        sendLogs(round1);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    } catch (DataFormatException e) {
+                        e.printStackTrace();
+                    }
                 }
-                try {
-                    sendLogs(round1);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                } catch (DataFormatException e) {
-                    e.printStackTrace();
-                }
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                String message = "close";
+                Intent intent = new Intent(COPA_RESULT);
+                if(message != null)
+                    intent.putExtra(CLOSE, message);
+                broadcaster.sendBroadcast(intent);
             }
 
         }
@@ -195,15 +240,83 @@ public class GattService extends Service {
 
             super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
             byte[] bytes = value;
-            String message = new String(bytes);
-            sendNotification(message);
-            Log.d("lengthRound1",String.valueOf(round1.length));
-            if(protocolCounter == 0){
-                sendData(characteristic,round1,device);
-                protocolCounter++;
-            }
 
-            server.sendResponse(device, requestId, 0, offset, value);
+           // String message = new String(bytes);
+           // sendNotification("Received Message");
+            //receive value from customer
+            Log.d("receiveValue",String.valueOf(value.length));
+            Log.d("value", new String(value));
+            if(packetData == null){
+                sendNotification("Received Message");
+            }
+            if(numPackets==0) {
+                //on the other side will tell us how many is the packet size.
+                packetFinish=false;
+                packetData = new byte[0];
+
+                try{
+                    numPackets = Integer.valueOf(new String(bytes));
+                    // is an integer!
+                } catch (NumberFormatException e) {
+                    // not an integer!
+                }
+                Log.d("numPackets", numPackets.toString());
+
+            }else{
+
+                packetData =combineByte(packetData,value);
+                numPackets--;
+                Log.d("numPackets", numPackets.toString());
+                Log.d("value", new String(value));
+                if(numPackets==0){
+                   // packetData = null;
+                    packetFinish=true;
+                }
+            }
+            if(packetFinish){
+                System.out.println("PacketLength: "+packetData.length);
+                try {
+                    sendLogs(packetData);
+                    packetData = null;
+                    if(protocolCounter == 2){
+                        //send round 1 level 2
+                        sendData(characteristic,round1,device);
+                        //run round 2 level 1 but not send yet, send after received
+                        if(!jpake.round2){
+                        round2 = jpake.jpakeRound2();
+                        jpake.round2=true;
+                            sendLogs(round2);
+                        }
+                    }else if (protocolCounter == 4){
+                        //means that we already received round 2 level 1 from customer, then we send our round 2 lvl 2
+                        Log.d("protocol4 running","sendDatamethod");
+                        sendData(characteristic,round2,device);
+                    }else if (protocolCounter == 5){
+                        if(!jpake.round3){
+                            round3 = jpake.pprotocolRound1();
+                            jpake.round3=true;
+                            sendLogs(round3);
+                            sendData(characteristic,round3,device);
+                        }
+                    }else if (protocolCounter == 7){
+                        if(!jpake.round4){
+                            round4 = jpake.pprotocolRound2();
+                            jpake.round4=false;
+                            sendNotification("Payment Complete !");
+                            sendLogs(round4);
+                        }
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } catch (DataFormatException e) {
+                    e.printStackTrace();
+                }
+            }
+            if(packetData!=null){
+            Log.d("packetDataSize", String.valueOf(packetData.length));
+            }
+                server.sendResponse(device, requestId, 0, offset, value);
+
 
             // gatt.writeCharacteristic(characteristic);
         }
@@ -278,6 +391,15 @@ public class GattService extends Service {
             server.notifyCharacteristicChanged(device, characteristic, false);
         }
 
+    }
+    public byte[] combineByte(byte[] byte1, byte[] byte2){
+        byte[] combined = new byte[byte1.length + byte2.length];
+
+        for (int i = 0; i < combined.length; ++i)
+        {
+            combined[i] = i < byte1.length ? byte1[i] : byte2[i - byte1.length];
+        }
+        return combined;
     }
     @Override
     public IBinder onBind(Intent intent) {
